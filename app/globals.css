@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: "Fraunces", serif;
+  --font-body: "IBM Plex Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+html, body {
+  background: #0E1B1E;
+  color: #EDE6D6;
+}
+
+body {
+  font-family: var(--font-body);
+  background-image:
+    radial-gradient(circle at 15% 0%, rgba(231,167,62,0.06), transparent 40%),
+    radial-gradient(circle at 85% 100%, rgba(79,179,169,0.06), transparent 40%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: #E7A73E;
+  color: #0E1B1E;
+}
+
+/* thin scrollbar to match the ledger aesthetic */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0E1B1E; }
+::-webkit-scrollbar-thumb { background: #233A3D; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #357C75; }
+
+.stamp {
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.paper-card {
+  background: #EDE6D6;
+  color: #1B2420;
+  border-radius: 10px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.4) inset, 0 8px 24px -12px rgba(0,0,0,0.6);
+}
+
+.field-input {
+  background: #16292C;
+  border: 1px solid #233A3D;
+  color: #EDE6D6;
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.field-input:focus {
+  border-color: #E7A73E;
+}
+.field-input::placeholder {
+  color: #5c7275;
+}
+
+.btn {
+  font-family: var(--font-mono);
+  letter-spacing: 0.03em;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-size: 0.82rem;
+  transition: transform 0.1s ease, opacity 0.15s ease;
+  white-space: nowrap;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: #E7A73E; color: #0E1B1E; }
+.btn-primary:hover { background: #C98A26; }
+.btn-ghost { background: transparent; color: #EDE6D6; border: 1px solid #233A3D; }
+.btn-ghost:hover { border-color: #4FB3A9; color: #4FB3A9; }
+.btn-danger { background: transparent; color: #C8553D; border: 1px solid #4a2a24; }
+.btn-danger:hover { background: #C8553D; color: #0E1B1E; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeUp { animation: fadeUp 0.25s ease both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fadeUp { animation: none; }
+}
