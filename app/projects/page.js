@@ -27,15 +27,29 @@ export default function ProjectsPage() {
     setLoading(true);
     try {
       const [p, m] = await Promise.all([
-        fetch("/api/projects").then((r) => r.json()),
-        fetch("/api/meta").then((r) => r.json()),
+        fetch("/api/projects").then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load projects");
+          return data;
+        }),
+        fetch("/api/meta").then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load metadata");
+          return data;
+        }),
       ]);
-      if (p.error) throw new Error(p.error);
-      setProjects(p);
-      setMeta(m);
+
+      setProjects(Array.isArray(p) ? p : []);
+      setMeta({
+        categories: Array.isArray(m?.categories) ? m.categories : [],
+        priorities: Array.isArray(m?.priorities) ? m.priorities : [],
+        statuses: Array.isArray(m?.statuses) ? m.statuses : [],
+      });
       setError(null);
     } catch (err) {
       setError(err.message);
+      setProjects([]);
+      setMeta({ categories: [], priorities: [], statuses: [] });
     } finally {
       setLoading(false);
     }

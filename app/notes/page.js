@@ -24,15 +24,29 @@ export default function NotesPage() {
     setLoading(true);
     try {
       const [n, m] = await Promise.all([
-        fetch("/api/notes").then((r) => r.json()),
-        fetch("/api/meta").then((r) => r.json()),
+        fetch("/api/notes").then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load notes");
+          return data;
+        }),
+        fetch("/api/meta").then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load metadata");
+          return data;
+        }),
       ]);
-      if (n.error) throw new Error(n.error);
-      setNotes(n);
-      setMeta(m);
+
+      setNotes(Array.isArray(n) ? n : []);
+      setMeta({
+        categories: Array.isArray(m?.categories) ? m.categories : [],
+        priorities: Array.isArray(m?.priorities) ? m.priorities : [],
+        statuses: Array.isArray(m?.statuses) ? m.statuses : [],
+      });
       setError(null);
     } catch (err) {
       setError(err.message);
+      setNotes([]);
+      setMeta({ categories: [], priorities: [], statuses: [] });
     } finally {
       setLoading(false);
     }
@@ -104,27 +118,27 @@ export default function NotesPage() {
 
   return (
     <div className="max-w-4xl">
-      <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
         <div>
           <div className="stamp text-amber text-[11px] mb-2">04 · notes</div>
-          <h1 className="font-display text-3xl text-paper">Knowledge notes</h1>
+          <h1 className="text-3xl font-display text-paper">Knowledge notes</h1>
         </div>
         <button className="btn btn-primary" onClick={openCreate}>
           + new note
         </button>
       </div>
 
-      {error && <div className="paper-card border-l-4 border-brick px-5 py-3 mb-6 text-sm">{error}</div>}
-      {loading && <p className="text-paper/50 text-sm">Loading…</p>}
+      {error && <div className="px-5 py-3 mb-6 text-sm border-l-4 paper-card border-brick">{error}</div>}
+      {loading && <p className="text-sm text-paper/50">Loading…</p>}
 
-      <div className="grid sm:grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         {!loading && notes.length === 0 && !error && (
-          <p className="text-paper/50 text-sm">No notes saved yet.</p>
+          <p className="text-sm text-paper/50">No notes saved yet.</p>
         )}
         {notes.map((n) => (
-          <div key={n.ID} className="paper-card p-5 animate-fadeUp flex flex-col">
+          <div key={n.ID} className="flex flex-col p-5 paper-card animate-fadeUp">
             <div className="flex items-start justify-between gap-2">
-              <h3 className="font-display text-lg leading-snug">{n.TITLE}</h3>
+              <h3 className="text-lg leading-snug font-display">{n.TITLE}</h3>
               <button
                 onClick={() => toggleFavorite(n)}
                 className={`text-lg leading-none ${n.FAVORITE ? "text-amber" : "text-paper-text/20 hover:text-amber"}`}
@@ -134,7 +148,7 @@ export default function NotesPage() {
               </button>
             </div>
             <div className="stamp text-[10px] text-paper-text/50 mt-1">{n.CATEGORY_TITLE || "uncategorized"}</div>
-            {n.CONTENT && <p className="text-sm mt-2 text-paper-text/80 flex-1">{n.CONTENT}</p>}
+            {n.CONTENT && <p className="flex-1 mt-2 text-sm text-paper-text/80">{n.CONTENT}</p>}
             {n.TAGS && (
               <div className="flex gap-1.5 flex-wrap mt-3">
                 {n.TAGS.split(",").map((tag) => (
@@ -144,11 +158,11 @@ export default function NotesPage() {
                 ))}
               </div>
             )}
-            <div className="flex gap-2 mt-4 pt-3 border-t border-paper-dim">
+            <div className="flex gap-2 pt-3 mt-4 border-t border-paper-dim">
               <button className="btn btn-ghost !border-paper-text/20 !text-paper-text text-xs" onClick={() => openEdit(n)}>
                 edit
               </button>
-              <button className="btn btn-danger text-xs" onClick={() => deleteNote(n.ID)}>
+              <button className="text-xs btn btn-danger" onClick={() => deleteNote(n.ID)}>
                 delete
               </button>
             </div>

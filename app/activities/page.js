@@ -24,15 +24,29 @@ export default function ActivitiesPage() {
     setLoading(true);
     try {
       const [a, m] = await Promise.all([
-        fetch("/api/activities").then((r) => r.json()),
-        fetch("/api/meta").then((r) => r.json()),
+        fetch("/api/activities").then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load activities");
+          return data;
+        }),
+        fetch("/api/meta").then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load metadata");
+          return data;
+        }),
       ]);
-      if (a.error) throw new Error(a.error);
-      setActivities(a);
-      setMeta(m);
+
+      setActivities(Array.isArray(a) ? a : []);
+      setMeta({
+        categories: Array.isArray(m?.categories) ? m.categories : [],
+        priorities: Array.isArray(m?.priorities) ? m.priorities : [],
+        statuses: Array.isArray(m?.statuses) ? m.statuses : [],
+      });
       setError(null);
     } catch (err) {
       setError(err.message);
+      setActivities([]);
+      setMeta({ categories: [], priorities: [], statuses: [] });
     } finally {
       setLoading(false);
     }

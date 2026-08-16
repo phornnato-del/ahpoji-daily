@@ -28,15 +28,29 @@ export default function GoalsPage() {
     setLoading(true);
     try {
       const [g, m] = await Promise.all([
-        fetch("/api/goals").then((r) => r.json()),
-        fetch("/api/meta").then((r) => r.json()),
+        fetch("/api/goals").then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load goals");
+          return data;
+        }),
+        fetch("/api/meta").then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load metadata");
+          return data;
+        }),
       ]);
-      if (g.error) throw new Error(g.error);
-      setGoals(g);
-      setMeta(m);
+
+      setGoals(Array.isArray(g) ? g : []);
+      setMeta({
+        categories: Array.isArray(m?.categories) ? m.categories : [],
+        priorities: Array.isArray(m?.priorities) ? m.priorities : [],
+        statuses: Array.isArray(m?.statuses) ? m.statuses : [],
+      });
       setError(null);
     } catch (err) {
       setError(err.message);
+      setGoals([]);
+      setMeta({ categories: [], priorities: [], statuses: [] });
     } finally {
       setLoading(false);
     }
