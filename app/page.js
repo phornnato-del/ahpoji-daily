@@ -212,7 +212,7 @@ export default async function DashboardPage() {
           {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
         </div>
         <div>
-          <h1 className="text-3xl font-display md:text-5xl text-paper">Today's overview</h1>
+          <h1 className="text-3xl font-display md:text-5xl text-paper">Today&apos;s overview</h1>
           <p className="mt-2 text-sm text-paper/50">A clear view of what is moving forward.</p>
         </div>
         <div className="hidden md:block stamp text-[10px] text-teal border border-ink-line px-3 py-2 rounded-full">
@@ -222,7 +222,7 @@ export default async function DashboardPage() {
 
       {dbError && (
         <div className="px-5 py-4 mb-8 text-sm border-l-4 paper-card border-brick">
-          <strong className="text-brick">Couldn't reach MySQL:</strong> {dbError}
+          <strong className="text-brick">Couldn&apos;t reach MySQL:</strong> {dbError}
           <div className="mt-1 text-paper-text/70">
             Check your <code>.env.local</code> connection settings — see the README.
           </div>

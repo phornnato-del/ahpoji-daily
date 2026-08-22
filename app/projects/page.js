@@ -79,6 +79,8 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     loadProjects();
+    // loadProjects is intentionally scoped to the current query state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagination.pageIndex, pagination.pageSize, search]);
 
   useEffect(() => {

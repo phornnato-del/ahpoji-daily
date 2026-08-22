@@ -75,6 +75,8 @@ export default function NotesPage() {
 
   useEffect(() => {
     loadNotes();
+    // loadNotes is intentionally scoped to the current query state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagination.pageIndex, pagination.pageSize, search]);
 
   useEffect(() => {
