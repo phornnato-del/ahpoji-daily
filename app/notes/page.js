@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import Modal from "../components/Modal";
 
 const emptyForm = {
@@ -11,50 +12,90 @@ const emptyForm = {
   FAVORITE: false,
 };
 
+const notesCache = new Map();
+let noteMetaCache = null;
+
+function Icon({ name }) {
+  const paths = {
+    eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" /><circle cx="12" cy="12" r="2.5" /></>,
+    edit: <><path d="m4 16-.7 3.7L7 19l11-11-3-3L4 16Z" /><path d="m13.5 6.5 3 3" /></>,
+    trash: <><path d="M4 7h16M10 11v5M14 11v5" /><path d="m6 7 1 13h10l1-13M9 7V4h6v3" /></>,
+  };
+  return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">{paths[name]}</svg>;
+}
+
 export default function NotesPage() {
   const [notes, setNotes] = useState([]);
   const [meta, setMeta] = useState({ categories: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [detailNote, setDetailNote] = useState(null);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 5 });
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
-  async function loadAll() {
+  async function loadNotes() {
+    const cacheKey = `${search}|${pagination.pageIndex}|${pagination.pageSize}`;
+    const cached = notesCache.get(cacheKey);
+    if (cached) {
+      setNotes(cached.items);
+      setTotal(cached.total);
+      setTotalPages(cached.totalPages);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const [n, m] = await Promise.all([
-        fetch("/api/notes").then(async (r) => {
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load notes");
-          return data;
-        }),
-        fetch("/api/meta").then(async (r) => {
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load metadata");
-          return data;
-        }),
-      ]);
-
-      setNotes(Array.isArray(n) ? n : []);
-      setMeta({
-        categories: Array.isArray(m?.categories) ? m.categories : [],
-        priorities: Array.isArray(m?.priorities) ? m.priorities : [],
-        statuses: Array.isArray(m?.statuses) ? m.statuses : [],
-      });
+      const params = new URLSearchParams({ page: String(pagination.pageIndex + 1), pageSize: String(pagination.pageSize), search });
+      const response = await fetch(`/api/notes?${params}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.error) throw new Error(data?.error || "Failed to load notes");
+      const items = Array.isArray(data.items) ? data.items : [];
+      const nextTotal = Number(data.total || 0);
+      const nextTotalPages = Number(data.totalPages || 1);
+      setNotes(items);
+      setTotal(nextTotal);
+      setTotalPages(nextTotalPages);
+      notesCache.set(cacheKey, { items, total: nextTotal, totalPages: nextTotalPages });
       setError(null);
     } catch (err) {
       setError(err.message);
       setNotes([]);
-      setMeta({ categories: [], priorities: [], statuses: [] });
+      setTotal(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadAll();
+    loadNotes();
+  }, [pagination.pageIndex, pagination.pageSize, search]);
+
+  useEffect(() => {
+    if (noteMetaCache) {
+      setMeta(noteMetaCache);
+      return;
+    }
+    fetch("/api/meta").then((response) => response.json()).then((data) => {
+      const nextMeta = { categories: Array.isArray(data?.categories) ? data.categories : [], priorities: [], statuses: [] };
+      noteMetaCache = nextMeta;
+      setMeta(nextMeta);
+    }).catch(() => setMeta({ categories: [], priorities: [], statuses: [] }));
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPagination((current) => ({ ...current, pageIndex: 0 }));
+      setSearch(searchInput.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   function openCreate() {
     setEditing(null);
@@ -74,6 +115,10 @@ export default function NotesPage() {
     setModalOpen(true);
   }
 
+  function openDetails(n) {
+    setDetailNote(n);
+  }
+
   async function submitForm(e) {
     e.preventDefault();
     const payload = { ...form, CATEGORY_ID: form.CATEGORY_ID || null };
@@ -86,7 +131,8 @@ export default function NotesPage() {
     });
     if (res.ok) {
       setModalOpen(false);
-      loadAll();
+      notesCache.clear();
+      loadNotes();
     } else {
       const data = await res.json();
       alert(data.error || "Something went wrong");
@@ -96,7 +142,8 @@ export default function NotesPage() {
   async function deleteNote(id) {
     if (!confirm("Delete this note?")) return;
     await fetch(`/api/notes/${id}`, { method: "DELETE" });
-    loadAll();
+    notesCache.clear();
+    loadNotes();
   }
 
   async function toggleFavorite(n) {
@@ -111,13 +158,37 @@ export default function NotesPage() {
         FAVORITE: n.FAVORITE ? 0 : 1,
       }),
     });
-    loadAll();
+    notesCache.clear();
+    loadNotes();
   }
 
   const noteCategories = meta.categories.filter((c) => c.TYPE === "NOTE");
+  const columns = [
+    {
+      accessorKey: "TITLE",
+      header: "Note",
+      cell: ({ row }) => <div className="min-w-56"><div className="text-lg font-display">{row.original.TITLE}</div>{row.original.CONTENT && <p className="mt-1 text-xs text-paper-text/60">{row.original.CONTENT}</p>}</div>,
+    },
+    {
+      id: "details",
+      header: "Details",
+      cell: ({ row }) => <div className="text-xs min-w-44 stamp text-paper-text/60"><div>{row.original.CATEGORY_TITLE || "uncategorized"}</div>{row.original.TAGS && <div className="mt-1">{row.original.TAGS}</div>}</div>,
+    },
+    {
+      id: "favorite",
+      header: "Favorite",
+      cell: ({ row }) => <button onClick={() => toggleFavorite(row.original)} className={`text-lg leading-none ${Number(row.original.FAVORITE) === 1 ? "text-amber" : "text-paper-text/20 hover:text-amber"}`} aria-label="Toggle favorite">★</button>,
+    },
+    {
+      id: "actions",
+      header: "",
+      cell: ({ row }) => <div className="flex gap-1"><button className="btn btn-ghost !px-2 !text-paper-text" title="View note details" aria-label="View note details" onClick={() => openDetails(row.original)}><Icon name="eye" /></button><button className="btn btn-ghost !px-2 !text-paper-text" title="Edit note" aria-label="Edit note" onClick={() => openEdit(row.original)}><Icon name="edit" /></button><button className="btn btn-danger !px-2" title="Delete note" aria-label="Delete note" onClick={() => deleteNote(row.original.ID)}><Icon name="trash" /></button></div>,
+    },
+  ];
+  const table = useReactTable({ data: notes, columns, getCoreRowModel: getCoreRowModel(), manualPagination: true, pageCount: totalPages, state: { pagination }, onPaginationChange: setPagination });
 
   return (
-    <div className="max-w-4xl">
+    <div className="w-full max-w-none">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
         <div>
           <div className="stamp text-amber text-[11px] mb-2">04 · notes</div>
@@ -129,46 +200,11 @@ export default function NotesPage() {
       </div>
 
       {error && <div className="px-5 py-3 mb-6 text-sm border-l-4 paper-card border-brick">{error}</div>}
-      {loading && <p className="text-sm text-paper/50">Loading…</p>}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4"><input className="field-input w-full max-w-sm !bg-white/10" placeholder="search notes" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} /><label className="flex items-center gap-2 text-xs text-paper/60">rows<select className="field-input !bg-white/10" value={pagination.pageSize} onChange={(event) => setPagination({ pageIndex: 0, pageSize: Number(event.target.value) })}>{[5, 10, 20, 50].map((size) => <option key={size} value={size}>{size}</option>)}</select></label></div>
+        <div className="overflow-x-auto paper-card glass-table"><table className="w-full min-w-[760px] text-left"><thead className="border-b border-paper-text/15">{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => <th key={header.id} className="px-4 py-3 text-[10px] stamp text-paper-text/50">{flexRender(header.column.columnDef.header, header.getContext())}</th>)}</tr>)}</thead><tbody>{!loading && notes.length === 0 && <tr><td colSpan={columns.length} className="px-4 py-8 text-sm text-paper-text/60">{search ? "No matching notes." : "No notes saved yet."}</td></tr>}{table.getRowModel().rows.map((row) => <tr key={row.id} className="align-top border-b border-paper-text/10 last:border-0 animate-fadeUp">{row.getVisibleCells().map((cell) => <td key={cell.id} className="px-4 py-4">{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table></div>
+      <div className="flex items-center justify-between gap-3 mt-4 text-xs text-paper/60"><span>{total === 0 ? "0" : `${pagination.pageIndex * pagination.pageSize + 1}-${Math.min((pagination.pageIndex + 1) * pagination.pageSize, total)} of ${total}`}</span><div className="flex gap-2"><button className="text-xs btn btn-ghost" disabled={pagination.pageIndex === 0 || loading} onClick={() => table.previousPage()}>previous</button><button className="text-xs btn btn-ghost" disabled={pagination.pageIndex >= totalPages - 1 || loading} onClick={() => table.nextPage()}>next</button></div></div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {!loading && notes.length === 0 && !error && (
-          <p className="text-sm text-paper/50">No notes saved yet.</p>
-        )}
-        {notes.map((n) => (
-          <div key={n.ID} className="flex flex-col p-5 paper-card animate-fadeUp">
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="text-lg leading-snug font-display">{n.TITLE}</h3>
-              <button
-                onClick={() => toggleFavorite(n)}
-                className={`text-lg leading-none ${n.FAVORITE ? "text-amber" : "text-paper-text/20 hover:text-amber"}`}
-                aria-label="Toggle favorite"
-              >
-                ★
-              </button>
-            </div>
-            <div className="stamp text-[10px] text-paper-text/50 mt-1">{n.CATEGORY_TITLE || "uncategorized"}</div>
-            {n.CONTENT && <p className="flex-1 mt-2 text-sm text-paper-text/80">{n.CONTENT}</p>}
-            {n.TAGS && (
-              <div className="flex gap-1.5 flex-wrap mt-3">
-                {n.TAGS.split(",").map((tag) => (
-                  <span key={tag} className="stamp text-[9px] px-2 py-0.5 rounded-full bg-paper-dim">
-                    {tag.trim()}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2 pt-3 mt-4 border-t border-paper-dim">
-              <button className="btn btn-ghost !border-paper-text/20 !text-paper-text text-xs" onClick={() => openEdit(n)}>
-                edit
-              </button>
-              <button className="text-xs btn btn-danger" onClick={() => deleteNote(n.ID)}>
-                delete
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      <Modal open={!!detailNote} onClose={() => setDetailNote(null)} title="Note details">{detailNote && <div className="space-y-4"><h2 className="text-2xl font-display">{detailNote.TITLE}</h2><p className="text-sm text-paper-text/70">{detailNote.CONTENT || "No content added."}</p><div className="grid grid-cols-2 gap-3 text-xs"><div><div className="stamp text-[10px] text-paper-text/50">category</div>{detailNote.CATEGORY_TITLE || "uncategorized"}</div><div><div className="stamp text-[10px] text-paper-text/50">favorite</div>{Number(detailNote.FAVORITE) === 1 ? "yes" : "no"}</div><div><div className="stamp text-[10px] text-paper-text/50">tags</div>{detailNote.TAGS || "none"}</div></div></div>}</Modal>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Edit note" : "New note"}>
         <form onSubmit={submitForm} className="space-y-3">

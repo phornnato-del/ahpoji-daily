@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import Modal from "../components/Modal";
 
 const emptyForm = {
@@ -11,6 +12,18 @@ const emptyForm = {
   NOTE: "",
 };
 
+const activitiesCache = new Map();
+let activityMetaCache = null;
+
+function Icon({ name }) {
+  const paths = {
+    eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" /><circle cx="12" cy="12" r="2.5" /></>,
+    edit: <><path d="m4 16-.7 3.7L7 19l11-11-3-3L4 16Z" /><path d="m13.5 6.5 3 3" /></>,
+    trash: <><path d="M4 7h16M10 11v5M14 11v5" /><path d="m6 7 1 13h10l1-13M9 7V4h6v3" /></>,
+  };
+  return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">{paths[name]}</svg>;
+}
+
 export default function ActivitiesPage() {
   const [activities, setActivities] = useState([]);
   const [meta, setMeta] = useState({ categories: [] });
@@ -19,42 +32,70 @@ export default function ActivitiesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [detailActivity, setDetailActivity] = useState(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 5 });
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
-  async function loadAll() {
+  async function loadActivities() {
+    const cacheKey = `${search}|${pagination.pageIndex}|${pagination.pageSize}`;
+    const cached = activitiesCache.get(cacheKey);
+    if (cached) {
+      setActivities(cached.items);
+      setTotal(cached.total);
+      setTotalPages(cached.totalPages);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const [a, m] = await Promise.all([
-        fetch("/api/activities").then(async (r) => {
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load activities");
-          return data;
-        }),
-        fetch("/api/meta").then(async (r) => {
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok || data?.error) throw new Error(data?.error || "Failed to load metadata");
-          return data;
-        }),
-      ]);
-
-      setActivities(Array.isArray(a) ? a : []);
-      setMeta({
-        categories: Array.isArray(m?.categories) ? m.categories : [],
-        priorities: Array.isArray(m?.priorities) ? m.priorities : [],
-        statuses: Array.isArray(m?.statuses) ? m.statuses : [],
-      });
+      const params = new URLSearchParams({ page: String(pagination.pageIndex + 1), pageSize: String(pagination.pageSize), search });
+      const response = await fetch(`/api/activities?${params}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.error) throw new Error(data?.error || "Failed to load activities");
+      const items = Array.isArray(data.items) ? data.items : [];
+      const nextTotal = Number(data.total || 0);
+      const nextTotalPages = Number(data.totalPages || 1);
+      setActivities(items);
+      setTotal(nextTotal);
+      setTotalPages(nextTotalPages);
+      activitiesCache.set(cacheKey, { items, total: nextTotal, totalPages: nextTotalPages });
       setError(null);
     } catch (err) {
       setError(err.message);
       setActivities([]);
-      setMeta({ categories: [], priorities: [], statuses: [] });
+      setTotal(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadAll();
+    loadActivities();
+  }, [pagination.pageIndex, pagination.pageSize, search]);
+
+  useEffect(() => {
+    if (activityMetaCache) {
+      setMeta(activityMetaCache);
+      return;
+    }
+    fetch("/api/meta").then((response) => response.json()).then((data) => {
+      const nextMeta = { categories: Array.isArray(data?.categories) ? data.categories : [], priorities: [], statuses: [] };
+      activityMetaCache = nextMeta;
+      setMeta(nextMeta);
+    }).catch(() => setMeta({ categories: [], priorities: [], statuses: [] }));
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPagination((current) => ({ ...current, pageIndex: 0 }));
+      setSearch(searchInput.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   function openCreate() {
     setEditing(null);
@@ -74,6 +115,10 @@ export default function ActivitiesPage() {
     setModalOpen(true);
   }
 
+  function openDetails(a) {
+    setDetailActivity(a);
+  }
+
   async function submitForm(e) {
     e.preventDefault();
     const payload = {
@@ -91,7 +136,8 @@ export default function ActivitiesPage() {
     });
     if (res.ok) {
       setModalOpen(false);
-      loadAll();
+      activitiesCache.clear();
+      loadActivities();
     } else {
       const data = await res.json();
       alert(data.error || "Something went wrong");
@@ -101,58 +147,53 @@ export default function ActivitiesPage() {
   async function deleteActivity(id) {
     if (!confirm("Delete this activity entry?")) return;
     await fetch(`/api/activities/${id}`, { method: "DELETE" });
-    loadAll();
+    activitiesCache.clear();
+    loadActivities();
   }
 
   const activityCategories = meta.categories.filter((c) => c.TYPE === "ACTIVITY");
+  const columns = [
+    {
+      accessorKey: "ACTIVITY_NAME",
+      header: "Activity",
+      cell: ({ row }) => <div className="min-w-52"><div className="font-medium">{row.original.ACTIVITY_NAME}</div>{row.original.NOTE && <p className="mt-1 text-xs text-paper-text/60">{row.original.NOTE}</p>}</div>,
+    },
+    {
+      id: "details",
+      header: "Details",
+      cell: ({ row }) => <div className="text-xs min-w-40 stamp text-paper-text/60"><div>{row.original.ACTIVITY_DATE || "no date"}</div><div className="mt-1">{row.original.CATEGORY_TITLE || "uncategorized"}</div></div>,
+    },
+    {
+      accessorKey: "DURATION_MINUTES",
+      header: "Duration",
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.DURATION_MINUTES ? `${row.original.DURATION_MINUTES}m` : "—"}</span>,
+    },
+    {
+      id: "actions",
+      header: "",
+      cell: ({ row }) => <div className="flex gap-1"><button className="btn btn-ghost !px-2 !text-paper-text" title="View activity details" aria-label="View activity details" onClick={() => openDetails(row.original)}><Icon name="eye" /></button><button className="btn btn-ghost !px-2 !text-paper-text" title="Edit activity" aria-label="Edit activity" onClick={() => openEdit(row.original)}><Icon name="edit" /></button><button className="btn btn-danger !px-2" title="Delete activity" aria-label="Delete activity" onClick={() => deleteActivity(row.original.ID)}><Icon name="trash" /></button></div>,
+    },
+  ];
+  const table = useReactTable({ data: activities, columns, getCoreRowModel: getCoreRowModel(), manualPagination: true, pageCount: totalPages, state: { pagination }, onPaginationChange: setPagination });
 
   return (
-    <div className="max-w-4xl">
-      <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
+    <div className="w-full max-w-none">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
         <div>
           <div className="stamp text-amber text-[11px] mb-2">03 · activities</div>
-          <h1 className="font-display text-3xl text-paper">Activity log</h1>
+          <h1 className="text-3xl font-display text-paper">Activity log</h1>
         </div>
         <button className="btn btn-primary" onClick={openCreate}>
           + log activity
         </button>
       </div>
 
-      {error && <div className="paper-card border-l-4 border-brick px-5 py-3 mb-6 text-sm">{error}</div>}
-      {loading && <p className="text-paper/50 text-sm">Loading…</p>}
+      {error && <div className="px-5 py-3 mb-6 text-sm border-l-4 paper-card border-brick">{error}</div>}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4"><input className="field-input w-full max-w-sm !bg-white/10" placeholder="search activities" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} /><label className="flex items-center gap-2 text-xs text-paper/60">rows<select className="field-input !bg-white/10" value={pagination.pageSize} onChange={(event) => setPagination({ pageIndex: 0, pageSize: Number(event.target.value) })}>{[5, 10, 20, 50].map((size) => <option key={size} value={size}>{size}</option>)}</select></label></div>
+        <div className="overflow-x-auto paper-card glass-table"><table className="w-full min-w-[760px] text-left"><thead className="border-b border-paper-text/15">{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => <th key={header.id} className="px-4 py-3 text-[10px] stamp text-paper-text/50">{flexRender(header.column.columnDef.header, header.getContext())}</th>)}</tr>)}</thead><tbody>{!loading && activities.length === 0 && <tr><td colSpan={columns.length} className="px-4 py-8 text-sm text-paper-text/60">{search ? "No matching activities." : "Nothing logged yet."}</td></tr>}{table.getRowModel().rows.map((row) => <tr key={row.id} className="align-top border-b border-paper-text/10 last:border-0 animate-fadeUp">{row.getVisibleCells().map((cell) => <td key={cell.id} className="px-4 py-4">{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table></div>
+      <div className="flex items-center justify-between gap-3 mt-4 text-xs text-paper/60"><span>{total === 0 ? "0" : `${pagination.pageIndex * pagination.pageSize + 1}-${Math.min((pagination.pageIndex + 1) * pagination.pageSize, total)} of ${total}`}</span><div className="flex gap-2"><button className="text-xs btn btn-ghost" disabled={pagination.pageIndex === 0 || loading} onClick={() => table.previousPage()}>previous</button><button className="text-xs btn btn-ghost" disabled={pagination.pageIndex >= totalPages - 1 || loading} onClick={() => table.nextPage()}>next</button></div></div>
 
-      <div className="paper-card overflow-hidden">
-        {!loading && activities.length === 0 && !error && (
-          <p className="text-paper-text/50 text-sm p-5">Nothing logged yet.</p>
-        )}
-        {activities.map((a, idx) => (
-          <div
-            key={a.ID}
-            className={`flex items-center justify-between gap-4 px-5 py-3 flex-wrap ${
-              idx !== activities.length - 1 ? "border-b border-paper-dim" : ""
-            }`}
-          >
-            <div className="min-w-0">
-              <div className="text-sm font-medium">{a.ACTIVITY_NAME}</div>
-              <div className="stamp text-[10px] text-paper-text/50 mt-0.5">
-                {a.ACTIVITY_DATE || "no date"} · {a.CATEGORY_TITLE || "uncategorized"}
-              </div>
-              {a.NOTE && <p className="text-xs text-paper-text/70 mt-1">{a.NOTE}</p>}
-            </div>
-            <div className="flex items-center gap-3 shrink-0">
-              <span className="font-mono text-xs text-paper-text/70">
-                {a.DURATION_MINUTES ? `${a.DURATION_MINUTES}m` : "—"}
-              </span>
-              <button className="btn btn-ghost !border-paper-text/20 !text-paper-text text-xs" onClick={() => openEdit(a)}>
-                edit
-              </button>
-              <button className="btn btn-danger text-xs" onClick={() => deleteActivity(a.ID)}>
-                delete
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      <Modal open={!!detailActivity} onClose={() => setDetailActivity(null)} title="Activity details">{detailActivity && <div className="space-y-4"><h2 className="text-2xl font-display">{detailActivity.ACTIVITY_NAME}</h2><p className="text-sm text-paper-text/70">{detailActivity.NOTE || "No note added."}</p><div className="grid grid-cols-2 gap-3 text-xs"><div><div className="stamp text-[10px] text-paper-text/50">date</div>{detailActivity.ACTIVITY_DATE || "none"}</div><div><div className="stamp text-[10px] text-paper-text/50">duration</div>{detailActivity.DURATION_MINUTES ? `${detailActivity.DURATION_MINUTES} minutes` : "none"}</div><div><div className="stamp text-[10px] text-paper-text/50">category</div>{detailActivity.CATEGORY_TITLE || "uncategorized"}</div></div></div>}</Modal>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Edit activity" : "Log activity"}>
         <form onSubmit={submitForm} className="space-y-3">

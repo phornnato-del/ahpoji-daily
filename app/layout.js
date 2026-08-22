@@ -1,9 +1,11 @@
 import "./globals.css";
 import Sidebar from "./components/Sidebar";
+import ThemeSettings from "./components/ThemeSettings";
 
 export const metadata = {
   title: "AHPOJI DAILY",
   description: "Personal ledger for goals, projects, activities and notes.",
+  icons: { icon: "/logo.png", apple: "/logo.png" },
 };
 
 export default function RootLayout({ children }) {
@@ -20,9 +22,10 @@ export default function RootLayout({ children }) {
       <body className="font-body">
         <div className="min-h-screen flex flex-col md:flex-row">
           <Sidebar />
-          <main className="flex-1 min-w-0 px-4 md:px-10 py-6 md:py-10">
-            {children}
-          </main>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex justify-end px-4 pt-4 md:px-10"><ThemeSettings /></div>
+            <main className="w-full flex-1 min-w-0 px-4 py-4 md:px-10 md:py-6">{children}</main>
+          </div>
         </div>
       </body>
     </html>

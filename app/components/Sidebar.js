@@ -17,6 +17,7 @@ export default function Sidebar() {
   return (
     <aside className="md:w-60 shrink-0 border-b md:border-b-0 md:border-r border-ink-line px-5 py-6 md:py-10 md:sticky md:top-0 md:h-screen">
       <div className="mb-8">
+        <img src="/logo.png" alt="AHPOJI DAILY logo" className="mb-4 h-12 w-12 rounded-md object-cover" />
         <div className="stamp text-amber text-[11px] mb-1">personal ledger</div>
         <h1 className="font-display text-2xl leading-tight text-paper">
           AHPOJI<br />DAILY
